@@ -82,3 +82,51 @@ class TemporalAutoencoder(nn.Module):
         latent = self.encode(x)
         reconstruction = self.decode(latent, seq_len)
         return reconstruction, latent
+    
+
+class CPCModel(nn.Module):
+    """
+    Implementación corregida de Contrastive Predictive Coding (CPC).
+    """
+    def __init__(self, input_dim, enc_dim, context_dim, predict_steps):
+        super(CPCModel, self).__init__()
+        self.enc_dim = enc_dim
+        self.context_dim = context_dim
+        self.predict_steps = predict_steps
+
+        # 1. Encoder (g_enc): Comprime la entrada actual
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, enc_dim)
+        )
+
+        # 2. Modelo Autoregresivo (g_ar): Resume la historia en un contexto c_t
+        self.gru = nn.GRU(input_size=enc_dim, hidden_size=context_dim, batch_first=True)
+
+        # 3. Predictores (W_k): Intentan predecir z_{t+k} a partir de c_t
+        self.predictors = nn.ModuleList([
+            nn.Linear(context_dim, enc_dim) for _ in range(predict_steps)
+        ])
+
+    def forward(self, x):
+        batch_size, seq_len, _ = x.shape
+        
+        # 1. Pasar cada paso de tiempo por el encoder
+        x_flat = x.reshape(-1, x.shape[-1]) 
+        z = self.encoder(x_flat)
+        z = z.reshape(batch_size, seq_len, self.enc_dim) 
+
+        # 2. Pasar la secuencia de z_t por la GRU para obtener c_t
+        out_gru, _ = self.gru(z) 
+        
+        # El contexto actual es el último paso de la secuencia procesada
+        c_t = out_gru[:, -1, :] 
+
+        return z, c_t
+
+    def predict_latents(self, c_t):
+        predictions = []
+        for i in range(self.predict_steps):
+            predictions.append(self.predictors[i](c_t))
+        return predictions
