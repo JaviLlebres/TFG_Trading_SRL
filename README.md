@@ -1,4 +1,4 @@
-# Robust Time Series Analysis with Topological Data Analysis and Deep Reinforcement Learning
+# Manual features vs Learned representations in algorithmic trading
 
 ## Prerequisites
 - Python 3.12
@@ -19,7 +19,7 @@ Ru the notebooks in the `notebooks` folder in the number and letters order. The 
 
 ## Data
 
-For this repo, ADAUSDT is the only dataset used. The data is downloaded from Binance using the `binance` package. The data is stored in the `data` folder.
+For this repo, BTCUSDT is the only dataset used.
 
 ## Results
 
@@ -28,9 +28,3 @@ Due to the size of the results, they are not included in the repo. However, you 
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
----
-
-## Docs
-
-- Supplementary materials for the paper: [SupMat](docs/SupMat.pdf).
