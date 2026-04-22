@@ -25,6 +25,4 @@ For this repo, BTCUSDT is the only dataset used.
 
 Due to the size of the results, they are not included in the repo. However, you can reproduce the results by running the notebooks in the `notebooks` folder. The results will be saved in the `RL_outputs/results/` folder.
 
-## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
