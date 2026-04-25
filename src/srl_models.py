@@ -130,3 +130,85 @@ class CPCModel(nn.Module):
         for i in range(self.predict_steps):
             predictions.append(self.predictors[i](c_t))
         return predictions
+    
+
+    import torch
+import torch.nn as nn
+import math
+
+class PositionalEncoding(nn.Module):
+    """
+    Inyecta información sobre la posición relativa o absoluta de los tokens en la secuencia.
+    """
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        # x shape: [batch_size, seq_len, d_model]
+        x = x + self.pe[:, :x.size(1), :]
+        return x
+
+class MaskedTransformerSRL(nn.Module):
+    """
+    Transformer Encoder para State Representation Learning.
+    Aprende representaciones mediante la reconstrucción de partes enmascaradas de la serie.
+    """
+    def __init__(self, input_dim, embed_dim, nhead, num_layers, dropout=0.1):
+        super(MaskedTransformerSRL, self).__init__()
+        
+        self.model_type = 'Transformer'
+        self.embed_dim = embed_dim
+
+        # 1. Proyección lineal de entrada (de 19 dimensiones a embed_dim)
+        self.input_proj = nn.Linear(input_dim, embed_dim)
+        
+        # 2. Codificación Posicional
+        self.pos_encoder = PositionalEncoding(embed_dim)
+
+        # 3. Encoder de Transformer
+        # Usamos batch_first=True para mantener la consistencia con tus otros modelos
+        encoder_layers = nn.TransformerEncoderLayer(
+            d_model=embed_dim, 
+            nhead=nhead, 
+            dim_feedforward=embed_dim * 4, 
+            dropout=dropout,
+            batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
+
+        # 4. Cabezal de reconstrucción (Decoder)
+        self.decoder = nn.Linear(embed_dim, input_dim)
+
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor de entrada [batch_size, seq_len, input_dim]
+        Returns:
+            reconstructed: La señal reconstruida para calcular el MSE.
+            latent: El vector de estado (embedding) extraído.
+        """
+        # Proyectar características a la dimensión del modelo
+        x = self.input_proj(x) * math.sqrt(self.embed_dim)
+        
+        # Añadir información posicional
+        x = self.pos_encoder(x)
+        
+        # Pasar por las capas de Atención
+        # latent_sequence shape: [batch_size, seq_len, embed_dim]
+        latent_sequence = self.transformer_encoder(x)
+        
+        # Para el embedding final (SRL), tomamos la media de la secuencia
+        # Esto resume la "atención global" de la ventana de 24h en un solo vector
+        latent_vector = latent_sequence.mean(dim=1)
+        
+        # Reconstrucción (solo para el entrenamiento enmascarado)
+        reconstructed = self.decoder(latent_sequence)
+        
+        return reconstructed, latent_vector

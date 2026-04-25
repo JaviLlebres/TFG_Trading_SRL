@@ -4,6 +4,7 @@ from PIL import Image
 import cv2
 import os
 import numpy as np
+import torch
 
 def generate_mosaic(full_path_img1, full_path_img2, full_path_img3, full_path_img4, full_path_img5, full_path_img6, full_path_img7, full_path_output):
 
@@ -96,6 +97,21 @@ def create_mosaic_video(mosaic_path, output_path, video_name, frame_time=1):
 def generate_numerical_filename(index, total_images):
     length = len(str(total_images))
     return f"{str(index).zfill(length)}"
+
+
+def create_sliding_windows(data, window_size):
+    """
+    Transforma un DataFrame en tensores 3D para la red neuronal.
+    Entrada: (Filas, Columnas) -> Salida: (Muestras, Ventana, Columnas)
+    """
+    windows = []
+    for i in range(len(data) - window_size):
+        # Extraemos un bloque de 'window_size' velas
+        window = data.iloc[i : i + window_size].values
+        windows.append(window)
+    
+    # Se retorna un tensor de PyTorch
+    return torch.tensor(np.array(windows), dtype=torch.float32)
 
 
 # Add technical indicators method to the data frame
