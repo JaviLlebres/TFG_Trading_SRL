@@ -114,6 +114,35 @@ def create_sliding_windows(data, window_size):
     return torch.tensor(np.array(windows), dtype=torch.float32)
 
 
+import numpy as np
+from sklearn.preprocessing import RobustScaler
+
+def prepare_multivariate_data(df):
+    """
+    Prepara las 3 variables clave para SRL: Precio, Volatilidad y Actividad.
+    Asegura que todas estén en una escala similar para el Transformer y CPC.
+    """
+    # Evitar warnings de copia
+    df = df.copy()
+
+    # 1. Rango Porcentual (Volatilidad relativa)
+    # Medimos qué tan grande es la vela respecto al precio
+    df['raw_range'] = (df['high'] - df['low']) / df['close']
+    
+    # 2. Actividad (Tradecount)
+    # Usamos logaritmo porque el tradecount en BTC tiene picos extremos que "rompen" la escala
+    df['log_tradecount'] = np.log1p(df['tradecount'])
+    
+    # 3. Normalización Robusta
+    # RobustScaler usa cuartiles, lo que es ideal para criptos porque ignora los "mechas" (outliers)
+    scaler = RobustScaler()
+    df[['normalized_range', 'normalized_tradecount']] = scaler.fit_transform(
+        df[['raw_range', 'log_tradecount']]
+    )
+    
+    return df
+
+
 # Add technical indicators method to the data frame
 
 def add_technical_indicators(df):

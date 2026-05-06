@@ -1,140 +1,102 @@
 import torch
 import torch.nn as nn
+import math
 
 class TemporalAutoencoder(nn.Module):
-    """
-    Autoencoder basado en LSTMs para State Representation Learning (SRL).
-    Diseñado para comprimir secuencias temporales en un embedding latente.
-    """
-    def __init__(self, input_dim, hidden_dim, latent_dim, num_layers=1):
-
-        """
-        Inicializa la arquitectura del Autoencoder Temporal.
-    
-        Configura las capas LSTM para el procesamiento de secuencias y las capas lineales 
-        la proyección al espacio latente. Define la capacidad de la red 
-        para comprimir información multidimensional en un vector de características denso.
-        """
-
+    def __init__(self, input_dim=3, hidden_dim=128, latent_dim=64, num_layers=2):
         super(TemporalAutoencoder, self).__init__()
         
-        # Comprime la secuencia en un vector (Embedding)
+        # Encoder: Comprime 3 variables x 168 horas
+        # CORRECCIÓN: Quitamos el ", _" del final de la asignación
         self.encoder = nn.LSTM(
             input_size=input_dim, 
             hidden_size=hidden_dim, 
             num_layers=num_layers, 
-            batch_first=True
+            batch_first=True,
+            dropout=0.1 if num_layers > 1 else 0
         )
         
-        # Capa lineal para llegar al espacio latente (el tamaño del embedding final)
         self.latent_layer = nn.Linear(hidden_dim, latent_dim)
         
-        # Reconstruye la secuencia original a partir del embedding
+        # Decoder: Reconstruye la secuencia original
         self.decoder_input = nn.Linear(latent_dim, hidden_dim)
+        
+        # CORRECCIÓN: Quitamos el ", _" aquí también
         self.decoder_lstm = nn.LSTM(
             input_size=hidden_dim, 
             hidden_size=hidden_dim, 
             num_layers=num_layers, 
-            batch_first=True
+            batch_first=True,
+            dropout=0.1 if num_layers > 1 else 0
         )
         self.output_layer = nn.Linear(hidden_dim, input_dim)
 
     def encode(self, x):
-
-        """
-        Extrae la representación latente (embedding) de una secuencia temporal de entrada.
-        
-        Procesa la ventana de datos a través de una red LSTM y utiliza el último estado 
-        oculto para generar un resumen matemático del estado del mercado.
-        """
-
         # x shape: (batch, seq_len, input_dim)
         _, (hidden, _) = self.encoder(x)
-        # Tomamos el último estado oculto para crear el embedding
+        # Tomamos el último estado oculto de la última capa (hidden[-1])
         latent = self.latent_layer(hidden[-1]) 
         return latent
 
     def decode(self, latent, seq_len):
-
-        """
-        Reconstruye la secuencia temporal original a partir del vector latente.
-        
-        Obliga al encoder a retener solo la información más relevante necesaria 
-        para recrear la señal de entrada sin ruido aleatorio.
-        """ 
-
-        # Repetimos el vector latente para cada paso de tiempo de la secuencia
+        # Repetimos el vector latente para cada paso de tiempo
         x = self.decoder_input(latent).unsqueeze(1).repeat(1, seq_len, 1)
         x, _ = self.decoder_lstm(x)
         return self.output_layer(x)
 
     def forward(self, x):
-
-        """
-        Ejecuta el flujo completo de propagación hacia adelante del Autoencoder.
-        
-        Integra las fases de codificación y decodificación para permitir el cálculo del 
-        error de reconstrucción durante el entrenamiento y la extracción simultánea de 
-        los embeddings latentes.
-        """
-
         seq_len = x.size(1)
         latent = self.encode(x)
         reconstruction = self.decode(latent, seq_len)
         return reconstruction, latent
-    
+
 
 class CPCModel(nn.Module):
-    """
-    Implementación corregida de Contrastive Predictive Coding (CPC).
-    """
-    def __init__(self, input_dim, enc_dim, context_dim, predict_steps):
+    def __init__(self, input_dim=3, enc_dim=128, context_dim=256, predict_steps=8):
         super(CPCModel, self).__init__()
         self.enc_dim = enc_dim
         self.context_dim = context_dim
         self.predict_steps = predict_steps
 
-        # 1. Encoder (g_enc): Comprime la entrada actual
+        # 1. Encoder Convolucional (g_enc): Extrae patrones locales
+        # Recibe 3 variables (Precio, Rango, Trades)
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, 64),
+            nn.Conv1d(input_dim, 64, kernel_size=3, padding=1),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Linear(64, enc_dim)
+            nn.Conv1d(64, enc_dim, kernel_size=3, padding=1),
+            nn.BatchNorm1d(enc_dim),
+            nn.ReLU()
         )
 
-        # 2. Modelo Autoregresivo (g_ar): Resume la historia en un contexto c_t
+        # 2. Modelo Autoregresivo (g_ar): GRU para el contexto global
         self.gru = nn.GRU(input_size=enc_dim, hidden_size=context_dim, batch_first=True)
 
-        # 3. Predictores (W_k): Intentan predecir z_{t+k} a partir de c_t
+        # 3. Predictores (W_k): Intentan predecir z_{t+k}
         self.predictors = nn.ModuleList([
             nn.Linear(context_dim, enc_dim) for _ in range(predict_steps)
         ])
 
     def forward(self, x):
+        # x shape: [batch, seq_len, input_dim]
         batch_size, seq_len, _ = x.shape
         
-        # 1. Pasar cada paso de tiempo por el encoder
-        x_flat = x.reshape(-1, x.shape[-1]) 
-        z = self.encoder(x_flat)
-        z = z.reshape(batch_size, seq_len, self.enc_dim) 
-
-        # 2. Pasar la secuencia de z_t por la GRU para obtener c_t
-        out_gru, _ = self.gru(z) 
+        # Ajustar para Conv1d: [batch, input_dim, seq_len]
+        x_conv = x.transpose(1, 2)
+        z = self.encoder(x_conv)
         
-        # El contexto actual es el último paso de la secuencia procesada
+        # Volver a [batch, seq_len, enc_dim] para la GRU
+        z = z.transpose(1, 2)
+
+        # Obtener contexto c_t
+        out_gru, _ = self.gru(z)
         c_t = out_gru[:, -1, :] 
 
         return z, c_t
 
     def predict_latents(self, c_t):
-        predictions = []
-        for i in range(self.predict_steps):
-            predictions.append(self.predictors[i](c_t))
-        return predictions
-    
+        return [pred(c_t) for pred in self.predictors]
 
-    import torch
-import torch.nn as nn
-import math
 
 class PositionalEncoding(nn.Module):
     """
@@ -155,25 +117,22 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1), :]
         return x
 
+
+
 class MaskedTransformerSRL(nn.Module):
-    """
-    Transformer Encoder para State Representation Learning.
-    Aprende representaciones mediante la reconstrucción de partes enmascaradas de la serie.
-    """
-    def __init__(self, input_dim, embed_dim, nhead, num_layers, dropout=0.1):
+    def __init__(self, input_dim=3, embed_dim=128, nhead=8, num_layers=4, dropout=0.1):
         super(MaskedTransformerSRL, self).__init__()
-        
-        self.model_type = 'Transformer'
         self.embed_dim = embed_dim
 
-        # 1. Proyección lineal de entrada (de 19 dimensiones a embed_dim)
+        # Proyección de las 3 variables
         self.input_proj = nn.Linear(input_dim, embed_dim)
         
-        # 2. Codificación Posicional
+        # Token [CLS] para resumir la secuencia
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        
+        # Positional Encoding (asegúrate de que sea la clase que ya tenías)
         self.pos_encoder = PositionalEncoding(embed_dim)
 
-        # 3. Encoder de Transformer
-        # Usamos batch_first=True para mantener la consistencia con tus otros modelos
         encoder_layers = nn.TransformerEncoderLayer(
             d_model=embed_dim, 
             nhead=nhead, 
@@ -183,32 +142,27 @@ class MaskedTransformerSRL(nn.Module):
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
 
-        # 4. Cabezal de reconstrucción (Decoder)
+        # Decoder para reconstruir las 3 variables
         self.decoder = nn.Linear(embed_dim, input_dim)
 
     def forward(self, x):
-        """
-        Args:
-            x: Tensor de entrada [batch_size, seq_len, input_dim]
-        Returns:
-            reconstructed: La señal reconstruida para calcular el MSE.
-            latent: El vector de estado (embedding) extraído.
-        """
-        # Proyectar características a la dimensión del modelo
+        batch_size = x.size(0)
+        
+        # 1. Proyectar entrada
         x = self.input_proj(x) * math.sqrt(self.embed_dim)
         
-        # Añadir información posicional
-        x = self.pos_encoder(x)
+        # 2. Añadir Token [CLS] al inicio
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1) 
         
-        # Pasar por las capas de Atención
-        # latent_sequence shape: [batch_size, seq_len, embed_dim]
+        # 3. Posiciones y Transformer
+        x = self.pos_encoder(x)
         latent_sequence = self.transformer_encoder(x)
         
-        # Para el embedding final (SRL), tomamos la media de la secuencia
-        # Esto resume la "atención global" de la ventana de 24h en un solo vector
-        latent_vector = latent_sequence.mean(dim=1)
+        # 4. Extraer el primer token (el resumen CLS) para el Agente RL
+        latent_vector = latent_sequence[:, 0, :]
         
-        # Reconstrucción (solo para el entrenamiento enmascarado)
-        reconstructed = self.decoder(latent_sequence)
+        # 5. Reconstruir la secuencia original (sin el CLS)
+        reconstructed = self.decoder(latent_sequence[:, 1:, :])
         
         return reconstructed, latent_vector

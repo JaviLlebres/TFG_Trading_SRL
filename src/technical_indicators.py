@@ -123,31 +123,45 @@ def compute_technical_indicators(df):
     data = calculate_atr(data, 14)
     data = calculate_atr(data, 21)
 
-    return data
+    # Cambio para que deplace los resultados hacia atrás
+    # Guardamos el precio de cierre original para el entorno (este no se shiftea)
+
+    price_close = data['close'].copy()
+    
+    # Desplazamos TODAS las features un paso al futuro 
+    # para que el agente solo vea datos pasados
+    features = data.drop(columns=['close', 'open', 'high', 'low', 'volume'], errors='ignore')
+    data[features.columns] = features.shift(1)
+    
+    # Eliminamos la primera fila que ahora será NaN
+    return data.dropna()
+
 
 def OHLC_features(df):
     '''
-    Function to compute OHLC features
+    Function to compute OHLC features de forma segura (sin Data Leakage)
     '''
-
     data = df.copy()
 
-    # log returns
+    # 1. Calculamos todo usando los datos actuales (aquí todavía hay leakage)
     data['close_log_returns'] = np.log(data['close'] / data['close'].shift(1))
     data['open_log_returns'] = np.log(data['open'] / data['open'].shift(1))
     data['high_log_returns'] = np.log(data['high'] / data['high'].shift(1))
     data['low_log_returns'] = np.log(data['low'] / data['low'].shift(1))
 
-    # percentage change
     data['close_perc_change'] = data['close'].pct_change()
-    data['open_perc_change'] = data['open'].pct_change()
-    data['high_perc_change'] = data['high'].pct_change()
-    data['low_perc_change'] = data['low'].pct_change()
-
-    # high low range
     data['high_low_range'] = data['high'] - data['low']
-
-    # close open range
     data['close_open_range'] = data['close'] - data['open']
+
+    # 2. SEPARACIÓN CRÍTICA: 
+    # Extraemos las columnas que acabamos de crear (las features)
+    feature_cols = [
+        'close_log_returns', 'open_log_returns', 'high_log_returns', 
+        'low_log_returns', 'close_perc_change', 'high_low_range', 'close_open_range'
+    ]
     
-    return data
+    # 3. LAS DESPLAZAMOS TODAS UN PASO AL FUTURO
+    # Así, en el tiempo 'T', el agente verá los retornos y rangos del tiempo 'T-1'
+    data[feature_cols] = data[feature_cols].shift(1)
+    
+    return data.dropna()
