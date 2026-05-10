@@ -120,25 +120,39 @@ from sklearn.preprocessing import RobustScaler
 def prepare_multivariate_data(df):
     """
     Prepara las 3 variables clave para SRL: Precio, Volatilidad y Actividad.
-    Asegura que todas estén en una escala similar para el Transformer y CPC.
+    Detecta automáticamente si usar Tradecount (Cripto) o Volume (Stocks).
     """
     # Evitar warnings de copia
     df = df.copy()
 
     # 1. Rango Porcentual (Volatilidad relativa)
-    # Medimos qué tan grande es la vela respecto al precio
+    # Se mantiene igual para ambos, es la esencia del movimiento del precio
     df['raw_range'] = (df['high'] - df['low']) / df['close']
     
-    # 2. Actividad (Tradecount)
-    # Usamos logaritmo porque el tradecount en BTC tiene picos extremos que "rompen" la escala
-    df['log_tradecount'] = np.log1p(df['tradecount'])
+    # 2. Actividad Dinámica
+    # Buscamos 'tradecount', si no está, usamos 'volume'
+    if 'tradecount' in df.columns:
+        actividad_col = 'tradecount'
+    elif 'volume' in df.columns:
+        actividad_col = 'volume'
+    else:
+        raise KeyError("No se encontró ni 'tradecount' ni 'volume' en el DataFrame.")
+
+    # Aplicamos logaritmo para normalizar la distribución de la actividad
+    # Usamos un nombre genérico 'log_activity' para que el Scaler no se líe
+    df['log_activity'] = np.log1p(df[actividad_col])
     
     # 3. Normalización Robusta
-    # RobustScaler usa cuartiles, lo que es ideal para criptos porque ignora los "mechas" (outliers)
     scaler = RobustScaler()
+    
+    # IMPORTANTE: Mantenemos los nombres de salida consistentes 
+    # para que el Transformer/CPC siempre reciban las mismas columnas
     df[['normalized_range', 'normalized_tradecount']] = scaler.fit_transform(
-        df[['raw_range', 'log_tradecount']]
+        df[['raw_range', 'log_activity']]
     )
+    
+    # Limpiamos columnas temporales para dejar el DF pulcro
+    df.drop(columns=['log_activity'], inplace=True)
     
     return df
 

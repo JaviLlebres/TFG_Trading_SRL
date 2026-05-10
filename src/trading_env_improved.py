@@ -2,6 +2,9 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+trade_btc = 0.0015
+trade_spy = 0.0007
+
 class SRLTradingEnv(gym.Env):
     def __init__(self, df_features, df_prices, initial_balance=1000, fee=0.001):
         super(SRLTradingEnv, self).__init__()
@@ -48,7 +51,7 @@ class SRLTradingEnv(gym.Env):
         trade_penalty = 0
         if action != self.position:
             # PENALIZACIÓN DISUASORIA: 0.5% (Evita el overtrading)
-            trade_penalty = 0.002
+            trade_penalty = trade_btc
             
             if action == 1: # COMPRAR
                 self.position = 1
