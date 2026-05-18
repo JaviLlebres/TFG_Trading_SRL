@@ -118,43 +118,20 @@ import numpy as np
 from sklearn.preprocessing import RobustScaler
 
 def prepare_multivariate_data(df):
-    """
-    Prepara las 3 variables clave para SRL: Precio, Volatilidad y Actividad.
-    Detecta automáticamente si usar Tradecount (Cripto) o Volume (Stocks).
-    """
-    # Evitar warnings de copia
     df = df.copy()
-
-    # 1. Rango Porcentual (Volatilidad relativa)
-    # Se mantiene igual para ambos, es la esencia del movimiento del precio
+    # 1. Cálculo de variables crudas
     df['raw_range'] = (df['high'] - df['low']) / df['close']
     
-    # 2. Actividad Dinámica
-    # Buscamos 'tradecount', si no está, usamos 'volume'
-    if 'tradecount' in df.columns:
-        actividad_col = 'tradecount'
-    elif 'volume' in df.columns:
-        actividad_col = 'volume'
-    else:
-        raise KeyError("No se encontró ni 'tradecount' ni 'volume' en el DataFrame.")
-
-    # Aplicamos logaritmo para normalizar la distribución de la actividad
-    # Usamos un nombre genérico 'log_activity' para que el Scaler no se líe
+    actividad_col = 'tradecount' if 'tradecount' in df.columns else 'volume'
     df['log_activity'] = np.log1p(df[actividad_col])
     
-    # 3. Normalización Robusta
-    scaler = RobustScaler()
+    # 2. Limpieza de columnas originales para evitar el error de "Overlap"
+    # Solo nos quedamos con lo que necesitamos como entrada
+    cols_to_keep = ['normalized_outliers_processed_log_return', 'raw_range', 'log_activity']
+    # Si alguna no existe aún (porque se escala luego), no pasa nada
+    existentes = [c for c in cols_to_keep if c in df.columns]
     
-    # IMPORTANTE: Mantenemos los nombres de salida consistentes 
-    # para que el Transformer/CPC siempre reciban las mismas columnas
-    df[['normalized_range', 'normalized_tradecount']] = scaler.fit_transform(
-        df[['raw_range', 'log_activity']]
-    )
-    
-    # Limpiamos columnas temporales para dejar el DF pulcro
-    df.drop(columns=['log_activity'], inplace=True)
-    
-    return df
+    return df[existentes]
 
 
 # Add technical indicators method to the data frame
