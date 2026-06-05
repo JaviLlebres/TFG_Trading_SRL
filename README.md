@@ -19,7 +19,7 @@ Ru the notebooks in the `notebooks` folder in the number and letters order. The 
 
 ## Data
 
-For this repo, BTCUSDT is the only dataset used.
+For this repo, BTCUSDT, ETHUSDT and SP&500 are the only dataset used, but others can be added, make sure to add them in `data` and in a folder and rename it as the others.
 
 ## Results
 
